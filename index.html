@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台灣三日天氣地圖</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      min-height: 100vh;
+      color: #e0f0ff;
+    }
+
+    header {
+      text-align: center;
+      padding: 1.5rem 1rem 0.75rem;
+    }
+    header h1 {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #fff;
+      text-shadow: 0 0 20px rgba(100,200,255,0.6);
+    }
+    header p {
+      font-size: 0.85rem;
+      color: #90b8cc;
+      margin-top: 0.3rem;
+    }
+
+    #status-msg {
+      font-size: 0.75rem;
+      color: #f0c060;
+      min-height: 1.2em;
+      text-align: center;
+      padding: 0.25rem 1rem 0.25rem;
+    }
+
+    /* Day tabs */
+    #day-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      flex-wrap: wrap;
+    }
+    .day-tab {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(100,200,255,0.25);
+      border-radius: 20px;
+      color: #90b8cc;
+      padding: 0.4rem 1.2rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .day-tab:hover { background: rgba(100,200,255,0.15); color: #fff; }
+    .day-tab.active {
+      background: linear-gradient(135deg, #1a8fa0, #0d6b7a);
+      border-color: #1a8fa0;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(26,143,160,0.5);
+    }
+
+    /* Toggle: max / avg */
+    #temp-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.25rem 1rem 0.5rem;
+    }
+    .toggle-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(100,200,255,0.25);
+      border-radius: 20px;
+      color: #90b8cc;
+      padding: 0.3rem 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .toggle-btn.active {
+      background: linear-gradient(135deg, #a04040, #7a2020);
+      border-color: #c04040;
+      color: #fff;
+      box-shadow: 0 0 10px rgba(200,60,60,0.4);
+    }
+
+    /* Main layout */
+    #main-layout {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 1rem;
+      padding: 0 1rem 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* Map */
+    #map-container {
+      position: relative;
+      flex: 0 0 auto;
+    }
+    #map-svg {
+      display: block;
+      filter: drop-shadow(0 4px 20px rgba(0,0,0,0.5));
+    }
+    .county-path {
+      stroke: rgba(255,255,255,0.35);
+      stroke-width: 0.8;
+      cursor: pointer;
+      transition: stroke 0.15s, stroke-width 0.15s;
+    }
+    .county-path:hover {
+      stroke: #fff;
+      stroke-width: 1.8;
+    }
+    .county-path.selected {
+      stroke: #ffe066;
+      stroke-width: 2.5;
+    }
+    .county-label {
+      font-size: 7px;
+      fill: rgba(255,255,255,0.75);
+      pointer-events: none;
+      text-anchor: middle;
+      dominant-baseline: central;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    .county-temp-label {
+      font-size: 6px;
+      fill: rgba(255,255,0,0.9);
+      pointer-events: none;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* Tooltip */
+    #tooltip {
+      position: fixed;
+      background: rgba(10,25,40,0.95);
+      border: 1px solid rgba(100,200,255,0.4);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 1000;
+      min-width: 180px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #tooltip.visible { opacity: 1; }
+    #tooltip h3 {
+      font-size: 1rem;
+      color: #fff;
+      margin-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(100,200,255,0.3);
+      padding-bottom: 0.35rem;
+    }
+    .tt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      padding: 0.15rem 0;
+      color: #b0d8ee;
+    }
+    .tt-val {
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .tt-val.hot { color: #ff7070; }
+    .tt-val.warm { color: #ffa040; }
+    .tt-val.mild { color: #ffe066; }
+    .tt-val.cool { color: #80e0ff; }
+
+    /* Side panel */
+    #side-panel {
+      flex: 0 0 220px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(100,200,255,0.15);
+      border-radius: 12px;
+      padding: 1rem;
+      min-height: 300px;
+    }
+    #side-panel h2 {
+      font-size: 0.95rem;
+      color: #90ccee;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(100,200,255,0.2);
+      padding-bottom: 0.4rem;
+    }
+    #panel-content {
+      font-size: 0.85rem;
+      color: #b0d0e8;
+      line-height: 1.7;
+    }
+    #panel-content .p-county { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    #panel-content .p-date { font-size: 0.75rem; color: #7090a8; margin-bottom: 0.5rem; }
+    #panel-content .p-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.25rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    #panel-content .p-label { color: #90b8cc; }
+    #panel-content .p-val { font-weight: 700; }
+
+    /* Legend */
+    #legend-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 1rem 0.5rem;
+    }
+    #legend-container label {
+      font-size: 0.75rem;
+      color: #90b8cc;
+      margin-bottom: 0.3rem;
+    }
+    #legend-svg { display: block; }
+
+    /* Ranking list */
+    #ranking {
+      flex: 0 0 180px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(100,200,255,0.15);
+      border-radius: 12px;
+      padding: 1rem;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    #ranking h2 { font-size: 0.9rem; color: #90ccee; margin-bottom: 0.6rem; }
+    .rank-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 0.3rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-size: 0.8rem;
+    }
+    .rank-item:hover { background: rgba(255,255,255,0.07); }
+    .rank-no { color: #607888; font-size: 0.7rem; width: 18px; text-align: right; }
+    .rank-name { flex: 1; color: #b0d0e8; }
+    .rank-temp { font-weight: 700; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(100,200,255,0.3); border-radius: 2px; }
+
+    @media (max-width: 700px) {
+      #side-panel, #ranking { flex: 1 1 100%; min-height: auto; }
+      #map-container { width: 100%; }
+      #map-svg { width: 100% !important; height: auto !important; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>台灣三日天氣地圖</h1>
+  <p>點選縣市查看詳細氣溫資料</p>
+</header>
+
+<div id="status-msg">正在載入氣象資料…</div>
+
+<div id="day-tabs"></div>
+
+<div id="temp-toggle">
+  <button class="toggle-btn active" data-type="max">最高溫</button>
+  <button class="toggle-btn" data-type="avg">平均溫</button>
+</div>
+
+<div id="legend-container">
+  <label id="legend-label">溫度 (°C)</label>
+  <svg id="legend-svg" width="300" height="36"></svg>
+</div>
+
+<div id="main-layout">
+  <div id="ranking">
+    <h2 id="rank-title">溫度排名</h2>
+    <div id="rank-list"></div>
+  </div>
+  <div id="map-container">
+    <svg id="map-svg"></svg>
+  </div>
+  <div id="side-panel">
+    <h2>縣市詳情</h2>
+    <div id="panel-content">請點選地圖上的縣市</div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ─── County data ─────────────────────────────────────────────────────────────
+const COUNTIES = [
+  "臺北市","新北市","基隆市","桃園市","新竹市","新竹縣",
+  "苗栗縣","臺中市","彰化縣","南投縣","雲林縣","嘉義市",
+  "嘉義縣","臺南市","高雄市","屏東縣","宜蘭縣","花蓮縣",
+  "臺東縣","澎湖縣","金門縣","連江縣"
+];
+
+// ─── Mock weather generator ───────────────────────────────────────────────────
+function generateMockWeather() {
+  const baseMock = {
+    "臺北市":28,"新北市":27,"基隆市":25,"桃園市":28,"新竹市":27,"新竹縣":26,
+    "苗栗縣":26,"臺中市":29,"彰化縣":29,"南投縣":27,"雲林縣":30,"嘉義市":31,
+    "嘉義縣":30,"臺南市":31,"高雄市":32,"屏東縣":32,"宜蘭縣":24,"花蓮縣":27,
+    "臺東縣":30,"澎湖縣":26,"金門縣":24,"連江縣":21
+  };
+  const today = new Date();
+  const data = {};
+  COUNTIES.forEach(c => {
+    const base = baseMock[c] || 26;
+    data[c] = {};
+    for (let d = 0; d < 3; d++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + d);
+      const noise = (Math.random() - 0.5) * 3;
+      const maxT = Math.round((base + noise + d * 0.3) * 10) / 10;
+      const minT = Math.round((maxT - 6 - Math.random() * 3) * 10) / 10;
+      const avgT = Math.round(((maxT + minT) / 2) * 10) / 10;
+      data[c][d] = { maxT, minT, avgT,
+        dateStr: date.toLocaleDateString('zh-TW', {month:'numeric',day:'numeric',weekday:'short'}) };
+    }
+  });
+  return data;
+}
+
+// ─── Parse CWA API response ───────────────────────────────────────────────────
+function parseCWAData(json) {
+  const locations = json?.records?.locations?.[0]?.location;
+  if (!locations) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const data = {};
+
+  locations.forEach(loc => {
+    const name = loc.locationName.replace(/台/g,'臺');
+    data[name] = {};
+    const days = [{},{},{}];
+    loc.weatherElement?.forEach(el => {
+      const elName = el.elementName;
+      el.time?.forEach(t => {
+        const dt = new Date(t.startTime);
+        const diff = Math.floor((dt - today) / 86400000);
+        if (diff < 0 || diff > 2) return;
+        const val = parseFloat(t.elementValue?.[0]?.value);
+        if (isNaN(val)) return;
+        if (!days[diff]) days[diff] = {};
+        if (elName === 'MaxT') {
+          days[diff].maxT = Math.max(days[diff].maxT ?? -99, val);
+        } else if (elName === 'MinT') {
+          days[diff].minT = days[diff].minT === undefined ? val : Math.min(days[diff].minT, val);
+        } else if (elName === 'T') {
+          if (!days[diff]._tVals) days[diff]._tVals = [];
+          days[diff]._tVals.push(val);
+        }
+      });
+    });
+    for (let d = 0; d < 3; d++) {
+      const dd = new Date(today); dd.setDate(today.getDate() + d);
+      const dayData = days[d] || {};
+      const maxT = dayData.maxT ?? '--';
+      const minT = dayData.minT ?? '--';
+      const tVals = dayData._tVals;
+      const avgT = tVals && tVals.length > 0
+        ? Math.round(tVals.reduce((a,b)=>a+b,0)/tVals.length * 10) / 10
+        : (typeof maxT === 'number' && typeof minT === 'number' ? Math.round((maxT+minT)/2*10)/10 : '--');
+      data[name][d] = {
+        maxT, minT, avgT,
+        dateStr: dd.toLocaleDateString('zh-TW', {month:'numeric',day:'numeric',weekday:'short'})
+      };
+    }
+  });
+  return data;
+}
+
+function setStatus(msg, color='#90b8cc') {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg; el.style.color = color;
+}
+
+// ─── Fetch weather from backend ───────────────────────────────────────────────
+async function fetchWeather() {
+  try {
+    const resp = await fetch('/api/weather', { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const parsed = parseCWAData(json);
+    if (parsed) {
+      weatherData = parsed;
+      setStatus('真實氣象資料載入成功！', '#60e0a0');
+    } else {
+      throw new Error('資料解析失敗');
+    }
+  } catch (e) {
+    setStatus(`無法取得氣象資料（${e.message}），顯示模擬資料`, '#f08060');
+  }
+  updateMap();
+  if (selectedCounty) showPanel(selectedCounty);
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let weatherData = generateMockWeather();
+let selectedDay = 0;
+let tempType = 'max'; // 'max' | 'avg'
+let selectedCounty = null;
+let geoFeatures = null;
+
+// ─── Color scale ──────────────────────────────────────────────────────────────
+const COLOR_DOMAIN = [16, 20, 24, 28, 32, 36];
+const COLOR_RANGE  = ['#3b9bd4','#6ec6e8','#a8e063','#ffe566','#ff9a3c','#e83c3c'];
+const colorScale = d3.scaleLinear()
+  .domain(COLOR_DOMAIN)
+  .range(COLOR_RANGE)
+  .clamp(true);
+
+function tempColor(val) {
+  if (typeof val !== 'number') return '#555';
+  return colorScale(val);
+}
+
+function getVal(county, day, type) {
+  const d = weatherData?.[county]?.[day];
+  if (!d) return null;
+  return type === 'max' ? d.maxT : d.avgT;
+}
+
+// ─── Build day tabs ───────────────────────────────────────────────────────────
+function buildDayTabs() {
+  const container = document.getElementById('day-tabs');
+  container.innerHTML = '';
+  const today = new Date();
+  for (let d = 0; d < 3; d++) {
+    const dt = new Date(today); dt.setDate(today.getDate() + d);
+    const label = d === 0 ? '今天' : d === 1 ? '明天' : '後天';
+    const dateStr = dt.toLocaleDateString('zh-TW', {month:'numeric',day:'numeric',weekday:'short'});
+    const btn = document.createElement('button');
+    btn.className = 'day-tab' + (d === selectedDay ? ' active' : '');
+    btn.textContent = `${label}（${dateStr}）`;
+    btn.addEventListener('click', () => {
+      selectedDay = d;
+      document.querySelectorAll('.day-tab').forEach((b,i) => b.classList.toggle('active', i===d));
+      updateMap();
+      if (selectedCounty) showPanel(selectedCounty);
+    });
+    container.appendChild(btn);
+  }
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const svg = d3.select('#legend-svg');
+  svg.selectAll('*').remove();
+  const W = 300, H = 36, barH = 16, N = 200;
+  const defs = svg.append('defs');
+  const grad = defs.append('linearGradient').attr('id','leg-grad').attr('x1','0%').attr('x2','100%');
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const val = 16 + t * 20;
+    grad.append('stop').attr('offset', `${t*100}%`).attr('stop-color', colorScale(val));
+  }
+  svg.append('rect').attr('x',0).attr('y',0).attr('width',W).attr('height',barH)
+    .attr('rx',4).attr('fill','url(#leg-grad)');
+  const ticks = [16,20,24,28,32,36];
+  ticks.forEach(t => {
+    const x = (t - 16) / 20 * W;
+    svg.append('text').attr('x',x).attr('y',H-2)
+      .attr('text-anchor','middle').attr('fill','#90b8cc').attr('font-size','10')
+      .text(`${t}°`);
+  });
+}
+
+// ─── Load TopoJSON & draw map ─────────────────────────────────────────────────
+const MAP_W = 420, MAP_H = 520;
+
+async function loadMap() {
+  let topo;
+  try {
+    const resp = await fetch('https://cdn.jsdelivr.net/npm/taiwan-atlas@0.0.4/counties-10t.json');
+    topo = await resp.json();
+  } catch(e) {
+    setStatus('地圖資料載入失敗，請檢查網路連線', '#f08060');
+    return;
+  }
+
+  const geo = topojson.feature(topo, topo.objects.counties);
+  geoFeatures = geo.features;
+
+  const projection = d3.geoMercator().fitSize([MAP_W, MAP_H], geo);
+  const path = d3.geoPath().projection(projection);
+
+  const svg = d3.select('#map-svg')
+    .attr('width', MAP_W).attr('height', MAP_H)
+    .attr('viewBox', `0 0 ${MAP_W} ${MAP_H}`);
+
+  svg.selectAll('.county-path')
+    .data(geoFeatures)
+    .enter()
+    .append('path')
+    .attr('class', 'county-path')
+    .attr('d', path)
+    .attr('data-name', d => normName(d.properties.COUNTYNAME))
+    .on('mouseenter', onCountyHover)
+    .on('mousemove', onCountyMove)
+    .on('mouseleave', onCountyLeave)
+    .on('click', onCountyClick);
+
+  svg.selectAll('.county-label')
+    .data(geoFeatures)
+    .enter()
+    .append('text')
+    .attr('class', 'county-label')
+    .attr('transform', d => `translate(${path.centroid(d)})`)
+    .attr('dy', '-4')
+    .text(d => shortName(normName(d.properties.COUNTYNAME)));
+
+  svg.selectAll('.county-temp-label')
+    .data(geoFeatures)
+    .enter()
+    .append('text')
+    .attr('class', 'county-temp-label')
+    .attr('transform', d => `translate(${path.centroid(d)})`)
+    .attr('dy', '6');
+
+  updateMap();
+}
+
+function normName(name) {
+  if (!name) return '';
+  return name.replace(/台/g, '臺');
+}
+
+function shortName(name) {
+  const m = { '臺北市':'臺北','新北市':'新北','基隆市':'基隆','桃園市':'桃園',
+    '新竹市':'新竹市','新竹縣':'新竹縣','苗栗縣':'苗栗','臺中市':'臺中',
+    '彰化縣':'彰化','南投縣':'南投','雲林縣':'雲林','嘉義市':'嘉義市',
+    '嘉義縣':'嘉義縣','臺南市':'臺南','高雄市':'高雄','屏東縣':'屏東',
+    '宜蘭縣':'宜蘭','花蓮縣':'花蓮','臺東縣':'臺東','澎湖縣':'澎湖',
+    '金門縣':'金門','連江縣':'連江' };
+  return m[name] || name.replace(/[市縣]/,'');
+}
+
+// ─── Update map colors ────────────────────────────────────────────────────────
+function updateMap() {
+  if (!geoFeatures) return;
+  const svg = d3.select('#map-svg');
+
+  svg.selectAll('.county-path')
+    .attr('fill', function() {
+      const name = this.getAttribute('data-name');
+      const val = getVal(name, selectedDay, tempType);
+      return tempColor(val);
+    });
+
+  svg.selectAll('.county-temp-label')
+    .text(function(d) {
+      const name = normName(d.properties.COUNTYNAME);
+      const val = getVal(name, selectedDay, tempType);
+      return typeof val === 'number' ? `${val}°` : '';
+    });
+
+  updateRanking();
+}
+
+// ─── Ranking list ─────────────────────────────────────────────────────────────
+function updateRanking() {
+  const list = document.getElementById('rank-list');
+  const title = document.getElementById('rank-title');
+  title.textContent = tempType === 'max' ? '最高溫排名' : '平均溫排名';
+  const rows = COUNTIES.map(c => ({ name: c, val: getVal(c, selectedDay, tempType) }))
+    .filter(r => typeof r.val === 'number')
+    .sort((a,b) => b.val - a.val);
+  list.innerHTML = '';
+  rows.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'rank-item';
+    div.innerHTML = `<span class="rank-no">${i+1}</span>
+      <span class="rank-name">${r.name.replace(/[市縣]/g,'')}</span>
+      <span class="rank-temp" style="color:${tempColor(r.val)}">${r.val}°</span>`;
+    div.addEventListener('click', () => {
+      selectedCounty = r.name;
+      highlightCounty(r.name);
+      showPanel(r.name);
+    });
+    list.appendChild(div);
+  });
+}
+
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+function onCountyHover(event, d) {
+  const name = normName(d.properties.COUNTYNAME);
+  const day = selectedDay;
+  const info = weatherData?.[name]?.[day];
+  const maxT = info?.maxT ?? '--';
+  const minT = info?.minT ?? '--';
+  const avgT = info?.avgT ?? '--';
+  const dateStr = info?.dateStr ?? '';
+
+  const tt = document.getElementById('tooltip');
+  tt.innerHTML = `
+    <h3>${name}</h3>
+    <div class="p-date">${dateStr}</div>
+    <div class="tt-row"><span>最高溫</span><span class="tt-val ${tempClass(maxT)}">${maxT}°C</span></div>
+    <div class="tt-row"><span>最低溫</span><span class="tt-val ${tempClass(minT)}">${minT}°C</span></div>
+    <div class="tt-row"><span>平均溫</span><span class="tt-val ${tempClass(avgT)}">${avgT}°C</span></div>
+  `;
+  tt.classList.add('visible');
+  moveTooltip(event);
+}
+function onCountyMove(event) { moveTooltip(event); }
+function onCountyLeave() { document.getElementById('tooltip').classList.remove('visible'); }
+function moveTooltip(event) {
+  const tt = document.getElementById('tooltip');
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let x = event.clientX + 14, y = event.clientY + 14;
+  if (x + 200 > vw) x = event.clientX - 200;
+  if (y + 140 > vh) y = event.clientY - 140;
+  tt.style.left = x + 'px'; tt.style.top = y + 'px';
+}
+function tempClass(v) {
+  if (typeof v !== 'number') return '';
+  if (v >= 32) return 'hot';
+  if (v >= 28) return 'warm';
+  if (v >= 24) return 'mild';
+  return 'cool';
+}
+
+// ─── Click county ─────────────────────────────────────────────────────────────
+function onCountyClick(event, d) {
+  const name = normName(d.properties.COUNTYNAME);
+  selectedCounty = name;
+  highlightCounty(name);
+  showPanel(name);
+}
+
+function highlightCounty(name) {
+  d3.selectAll('.county-path')
+    .classed('selected', function() { return this.getAttribute('data-name') === name; });
+}
+
+function showPanel(name) {
+  const panel = document.getElementById('panel-content');
+  let html = `<div class="p-county">${name}</div>`;
+  const today = new Date();
+  for (let d = 0; d < 3; d++) {
+    const info = weatherData?.[name]?.[d];
+    if (!info) continue;
+    const label = ['今天','明天','後天'][d];
+    const dt = new Date(today); dt.setDate(today.getDate() + d);
+    const dateStr = dt.toLocaleDateString('zh-TW', {month:'numeric',day:'numeric',weekday:'short'});
+    html += `
+      <div style="margin-top:0.7rem">
+        <div style="font-size:0.75rem;color:#607888;margin-bottom:0.25rem">${label}（${dateStr}）</div>
+        <div class="p-row"><span class="p-label">最高溫</span>
+          <span class="p-val" style="color:${tempColor(info.maxT)}">${info.maxT}°C</span></div>
+        <div class="p-row"><span class="p-label">最低溫</span>
+          <span class="p-val" style="color:${tempColor(info.minT)}">${info.minT}°C</span></div>
+        <div class="p-row"><span class="p-label">平均溫</span>
+          <span class="p-val" style="color:${tempColor(info.avgT)}">${info.avgT}°C</span></div>
+      </div>`;
+  }
+  panel.innerHTML = html;
+}
+
+// ─── Temp type toggle ─────────────────────────────────────────────────────────
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    tempType = btn.dataset.type;
+    document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateMap();
+    if (selectedCounty) showPanel(selectedCounty);
+  });
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+buildDayTabs();
+buildLegend();
+loadMap();
+fetchWeather();
+</script>
+</body>
+</html>
