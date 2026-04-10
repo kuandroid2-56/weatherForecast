@@ -14,7 +14,8 @@ app.get('/api/weather', async (req, res) => {
     return res.status(500).json({ error: 'CWA_API_KEY 尚未設定，請在 .env 檔案中設定' });
   }
 
-  const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?Authorization=${API_KEY}&elementName=MaxT,MinT,T&format=JSON`;
+  const elements = encodeURIComponent('最高溫度,最低溫度,平均溫度');
+  const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?Authorization=${API_KEY}&elementName=${elements}&format=JSON`;
 
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(15000) });

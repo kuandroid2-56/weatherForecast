@@ -338,31 +338,36 @@ function generateMockWeather() {
 
 // ─── Parse CWA API response ───────────────────────────────────────────────────
 function parseCWAData(json) {
-  const locations = json?.records?.locations?.[0]?.location;
+  const locations = json?.records?.Locations?.[0]?.Location;
   if (!locations) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   const data = {};
 
   locations.forEach(loc => {
-    const name = loc.locationName.replace(/台/g,'臺');
+    const name = loc.LocationName.replace(/台/g,'臺');
     data[name] = {};
     const days = [{},{},{}];
-    loc.weatherElement?.forEach(el => {
-      const elName = el.elementName;
-      el.time?.forEach(t => {
-        const dt = new Date(t.startTime);
+    loc.WeatherElement?.forEach(el => {
+      const elName = el.ElementName;
+      el.Time?.forEach(t => {
+        const dt = new Date(t.StartTime);
         const diff = Math.floor((dt - today) / 86400000);
         if (diff < 0 || diff > 2) return;
-        const val = parseFloat(t.elementValue?.[0]?.value);
-        if (isNaN(val)) return;
+        const ev = t.ElementValue?.[0];
+        if (!ev) return;
         if (!days[diff]) days[diff] = {};
-        if (elName === 'MaxT') {
-          days[diff].maxT = Math.max(days[diff].maxT ?? -99, val);
-        } else if (elName === 'MinT') {
-          days[diff].minT = days[diff].minT === undefined ? val : Math.min(days[diff].minT, val);
-        } else if (elName === 'T') {
-          if (!days[diff]._tVals) days[diff]._tVals = [];
-          days[diff]._tVals.push(val);
+        if (elName === '最高溫度') {
+          const val = parseFloat(ev.MaxTemperature);
+          if (!isNaN(val)) days[diff].maxT = Math.max(days[diff].maxT ?? -99, val);
+        } else if (elName === '最低溫度') {
+          const val = parseFloat(ev.MinTemperature);
+          if (!isNaN(val)) days[diff].minT = days[diff].minT === undefined ? val : Math.min(days[diff].minT, val);
+        } else if (elName === '平均溫度') {
+          const val = parseFloat(ev.Temperature);
+          if (!isNaN(val)) {
+            if (!days[diff]._tVals) days[diff]._tVals = [];
+            days[diff]._tVals.push(val);
+          }
         }
       });
     });
